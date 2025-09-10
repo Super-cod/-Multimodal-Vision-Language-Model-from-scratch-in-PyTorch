@@ -4,13 +4,12 @@ import torch.nn as nn
 from modeling_slip import simplevisionconfig
 
 class Vision_encoder(nn.Module):
-    def __init__(self,config:simplevisionconfig):
+    def __init__(self, config: simplevisionconfig):
         super().__init__()
-        self.config=config
+        self.config = config
 
-        #patch embeding to conver the images into the patches
-
-        self.patch_embed=nn.Conv2d(
+        # Turn the input image into smaller patches using a convolution
+        self.patch_embed = nn.Conv2d(
             in_channels=config.num_channels,
             out_channels=config.hidden_size,
             kernel_size=config.patch_size,
@@ -68,7 +67,7 @@ class TransformerLayer(nn.Module):
         x = x + attn_output
         x = self.norm1(x)
         
-        # MLP with residual
+        
         mlp_output = self.mlp(x)
         x = x + mlp_output
         x = self.norm2(x)
