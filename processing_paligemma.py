@@ -13,5 +13,14 @@ class ImageProcessing:
             T.Normalize(mean=config.IMAGE_MEAN, std=config.IMAGE_STD)
         ])
     
-    def process(self, image):
-        return self.transform(image).unsqueeze(0)
+    def process(self, images):
+        """Process a single image or list of images"""
+        if isinstance(images, list):
+            # Process multiple images
+            processed_images = []
+            for image in images:
+                processed_images.append(self.transform(image))
+            return torch.stack(processed_images)
+        else:
+            # Process single image
+            return self.transform(images).unsqueeze(0)

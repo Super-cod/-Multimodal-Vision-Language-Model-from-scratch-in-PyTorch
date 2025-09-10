@@ -62,15 +62,15 @@ class TransformerLayer(nn.Module):
         self.norm2 = nn.LayerNorm(config.hidden_size)
     
     def forward(self, x):
-        # Self-attention with residual
-        attn_output, _ = self.attention(x, x, x)
+        # Pre-norm: apply layer norm before attention
+        normed_x = self.norm1(x)
+        attn_output, _ = self.attention(normed_x, normed_x, normed_x)
         x = x + attn_output
-        x = self.norm1(x)
         
-        
-        mlp_output = self.mlp(x)
+        # Pre-norm: apply layer norm before MLP
+        normed_x = self.norm2(x)
+        mlp_output = self.mlp(normed_x)
         x = x + mlp_output
-        x = self.norm2(x)
         
         return x
     
