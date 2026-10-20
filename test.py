@@ -23,7 +23,7 @@ def test_complete_pipeline():
     
     # Test data
     test_image = Image.new('RGB', (500, 300), color='red')
-    test_prompt = "describe this image"
+    test_prompt = "<image> describe this image"
     
     print("Testing complete pipeline...")
     

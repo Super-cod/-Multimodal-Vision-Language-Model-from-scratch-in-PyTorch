@@ -33,5 +33,5 @@ class simplevisionconfig:
         self.num_img_tokens = num_img_tokens
         self.IMAGE_MEAN = IMAGE_MEAN
         self.IMAGE_STD = IMAGE_STD
-        self.text_dim=2048
+        self.text_dim = text_dim
 
