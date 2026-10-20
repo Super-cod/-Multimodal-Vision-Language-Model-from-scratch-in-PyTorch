@@ -5,7 +5,9 @@
 [![Tests](https://img.shields.io/badge/Tests-Shape%20%26%20Gradient%20Flow%20Passed-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A complete, end-to-end autoregressive Vision-Language Model (VLM) implemented in PyTorch from first principles with zero external high-level model wrappers. The architecture follows modern multimodal designs (PaliGemma / LLaVA), fusing a **Vision Transformer (ViT)** visual patch encoder with a **Causal Transformer Decoder** via a cross-modal linear projection bottleneck.
+A small end-to-end vision-language model in PyTorch: a Vision Transformer patch encoder, a linear projector, and a causal transformer decoder that attends to the projected image tokens spliced into the text sequence at an `<image>` anchor. The structure follows PaliGemma / LLaVA-style designs.
+
+**Provenance:** this is a study project. I built it while following a public YouTube walkthrough of PaliGemma-style VLMs, so the design is not original; the value here is a compact, readable implementation with shape and gradient tests. The model is **randomly initialised and untrained**, so generated text is meaningless (see Limitations).
 
 ---
 
@@ -94,91 +96,55 @@ Tokens with cumulative probability exceeding threshold $p$ are masked to $-\inft
 
 ## Setup & Execution Instructions
 
-### Prerequisites
-* Python 3.8+
-* PyTorch 2.0+
-* Pillow (`pip install torch torchvision pillow`)
+Requires Python 3.8+ and `pip install torch torchvision pillow`.
 
-### Running the Complete Suite
-
-Clone and run in PowerShell:
-
-```powershell
-Set-Location "C:\Users\swaya\Desktop\TIMEPASS\claude\git\Multimodal-Vision-Language-Model-from-scratch"
-.\run_tests.ps1
-```
-
-Or execute independently via Python:
+From the repository root:
 
 ```bash
-# 1. Run architectural shape contract and gradient flow verification tests
+# Shape contracts and gradient-flow test
 python tests/test_multimodal_architecture.py
 
-# 2. Run end-to-end forward pass and autoregressive generation
+# Forward pass and generation smoke test (untrained model)
 python test.py
 ```
 
----
+`.un_tests.ps1` runs both in PowerShell.
 
-## Concrete Inference Example
+## Usage example
 
-Below is a minimal end-to-end inference script using the unified model:
+This is the same flow `test.py` runs (verified to execute):
 
 ```python
-import torch
 from PIL import Image
-from modeling_slip import simplevisionconfig, simpletextconfig
-from multimodal_model import MultiModalModel
-from text_tokenizer import TextTokenizer
-from processing_paligemma import PaliGemmaProcessor
+from modeling_slip import simplevisionconfig
+from multimodal_model import MultimodalModel
+from inference import TextGenerator
 
-# 1. Initialize tokenizer and processor
-tokenizer = TextTokenizer(vocab_file="vocab.json")
-processor = PaliGemmaProcessor()
+config = simplevisionconfig(image_size=224, patch_size=16, hidden_size=768,
+                            text_dim=2048, num_hidden_layers=4)
+model = MultimodalModel(config, "vocab.json")
+generator = TextGenerator(model, model.tokenizer)
 
-# 2. Load configurations and model
-vision_cfg = simplevisionconfig(image_size=224, patch_size=16, num_hidden_layers=6, hidden_size=768)
-text_cfg = simpletextconfig(vocab_size=len(tokenizer.vocab), max_position_embeddings=512, hidden_size=2048)
-model = MultiModalModel(vision_cfg, text_cfg)
-model.eval()
-
-# 3. Prepare image and multimodal prompt with <image> semantic anchor
-image = Image.new("RGB", (224, 224), color=(73, 109, 137))
-pixel_values = processor.process_image(image)  # Shape: (1, 3, 224, 224)
-prompt = "<image> What objects are visible in this scene?"
-input_ids, image_insert_idx = tokenizer.prepare_input(prompt)
-
-# 4. Generate response with Nucleus (Top-p) sampling
-with torch.no_grad():
-    output_tokens = model.generate(
-        input_ids=input_ids.unsqueeze(0),
-        pixel_values=pixel_values,
-        image_insert_idx=image_insert_idx,
-        max_new_tokens=20,
-        temperature=0.8,
-        top_p=0.9
-    )
-
-response = tokenizer.decode(output_tokens[0])
-print(f"Generated Response: {response}")
+image = Image.new("RGB", (500, 300), color="red")
+logits = model.forward([image], ["<image> describe this image"])   # (1, 199, 6748)
+text = generator.generate(image, "<image> describe this image",
+                          max_length=10, temperature=1.0, top_p=0.9)
 ```
 
----
+Because the weights are random, `text` is a sequence of arbitrary vocabulary words.
 
-## Automated Verification & Test Outputs
+## Tests
+
+`tests/test_multimodal_architecture.py` checks that the vision encoder returns 197 tokens (1 CLS + 196 patches) of width 768, that the projector maps them to width 2048, and that gradients reach all three sub-networks. Output from my last run:
 
 ```
->>> Running Multimodal Architecture Verification Suite <<<
 [PASS] Test 1: Vision encoder token dimensions (1 CLS + 196 patches) verified: (2, 197, 768)
 [PASS] Test 2: Multimodal projector visual-textual dimension alignment verified: (2, 197, 2048)
 Loaded vocabulary with 6748 tokens
-[PASS] Test 3: End-to-end backpropagation gradient flow verified across all 3 sub-networks:
-       - Vision Encoder Grad Norm : 8.1193
-       - Projector Grad Norm      : 1.3865
-       - Language Model Grad Norm : 16.3071
-
->>> ALL MULTIMODAL ARCHITECTURE TESTS PASSED <<<
+[PASS] Test 3: End-to-end backpropagation gradient flow verified across all 3 sub-networks
 ```
+
+These tests prove the tensors have the right shapes and are trainable. They do not measure model quality, since no training or evaluation has been done.
 
 ---
 
@@ -186,7 +152,7 @@ Loaded vocabulary with 6748 tokens
 
 | Dimension | Implemented Scope | Out of Current Scope / Future Enhancements |
 | :--- | :--- | :--- |
-| **Model Weights** | Clean architectural implementation from first principles | Multi-billion parameter pre-trained checkpoints (weights randomly initialized or loaded via adapters) |
+| **Model Weights** | Architecture only; weights are random and the model has never been trained | Training on image-caption data, loading pre-trained checkpoints, any quality evaluation |
 | **Tokenizer** | Custom word-level tokenizer with `<image>` anchor | Production Byte-Pair Encoding (BPE) / SentencePiece tokenizer |
 | **Attention Mechanism** | Standard PyTorch Scaled Dot-Product Attention | FlashAttention-2 custom CUDA kernels or PagedAttention |
 | **Multimodal Inputs** | Single RGB image ($224 \times 224$) per prompt | Multi-image interleaved dialogues or video sequence processing |
@@ -207,13 +173,15 @@ Multimodal-Vision-Language-Model-from-scratch/
 ├── multimodal_model.py           # Unified end-to-end VLM orchestrator
 ├── inference.py                  # Autoregressive generation with Top-p nucleus sampling
 ├── vocab.json                    # Base token vocabulary (6,748 tokens)
-├── test.py                       # Full forward pass and autoregressive generation test
+├── test.py                       # Full forward pass and generation smoke test
+├── debug_test.py, simple_test.py # Early debugging scripts
+├── sentences.txt, vocabulary.py  # Vocabulary source text and vocabulary builder
 ├── tests/
 │   └── test_multimodal_architecture.py # Shape invariants & gradient flow unit tests
 ├── run_tests.ps1                 # Master verification script
 ├── .gitignore                    # Python & PyTorch ignore rules
 ├── LICENSE                       # MIT License
-└── README.md                     # Architectural specification & technical documentation
+└── Readme.md                     # Architectural specification & technical documentation
 ```
 
 ---
