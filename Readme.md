@@ -1,6 +1,11 @@
 # Multimodal Vision-Language Model (VLM) from Scratch
 
-A complete, end-to-end autoregressive Vision-Language Model (VLM) implemented in PyTorch from first principles. The architecture follows modern multimodal designs (PaliGemma / LLaVA), fusing a Vision Transformer (ViT) visual patch encoder with a causal Transformer Decoder via a cross-modal linear projection bottleneck.
+[![PyTorch](https://img.shields.io/badge/Framework-PyTorch%202.0%2B-EE4C2C.svg?logo=pytorch)](https://pytorch.org/)
+[![Architecture](https://img.shields.io/badge/Design-PaliGemma%20%2F%20LLaVA%20Style-blue.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-Shape%20%26%20Gradient%20Flow%20Passed-brightgreen.svg)]()
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+A complete, end-to-end autoregressive Vision-Language Model (VLM) implemented in PyTorch from first principles with zero external high-level model wrappers. The architecture follows modern multimodal designs (PaliGemma / LLaVA), fusing a **Vision Transformer (ViT)** visual patch encoder with a **Causal Transformer Decoder** via a cross-modal linear projection bottleneck.
 
 ---
 
@@ -59,19 +64,19 @@ A complete, end-to-end autoregressive Vision-Language Model (VLM) implemented in
 
 ---
 
-## Architectural & Mathematical Specification
+## Architectural & Mathematical Foundations
 
-### 1. Visual Tokenization (Patch Projection)
+### 1. Visual Tokenization & Patch Projection
 Given an input image $I \in \mathbb{R}^{C \times H \times W}$ with $C=3, H=224, W=224$ and patch size $P=16$:
 $$N = \frac{H \cdot W}{P^2} = \left(\frac{224}{16}\right)^2 = 196 \text{ visual patches}$$
 
-Each patch is mapped to a $d_{\text{vis}}$-dimensional latent embedding via a 2D convolution with stride $P$:
+Each patch is mapped to a $d_{\text{vis}}$-dimensional latent embedding ($d_{\text{vis}} = 768$) via a 2D convolution with stride $P$:
 $$X_{\text{patch}} = \text{Conv2D}(I, \text{kernel}=16, \text{stride}=16) \in \mathbb{R}^{B \times N \times d_{\text{vis}}}$$
 
 A learnable class token $x_{\text{cls}} \in \mathbb{R}^{1 \times 1 \times d_{\text{vis}}}$ is prepended, yielding $N + 1 = 197$ visual tokens:
 $$Z_0 = [x_{\text{cls}} \,\|\, X_{\text{patch}}] + E_{\text{pos}}, \quad E_{\text{pos}} \in \mathbb{R}^{1 \times (N+1) \times d_{\text{vis}}}$$
 
-### 2. Cross-Modal Projector
+### 2. Cross-Modal Linear Projector
 The visual encoder outputs tokens in vision latent space $\mathbb{R}^{d_{\text{vis}}}$ ($768$). The language model operates in textual hidden space $\mathbb{R}^{d_{\text{text}}}$ ($2048$). The multimodal projector performs affine subspace alignment:
 $$H_{\text{vis}} = Z_L W_{\text{proj}} + b_{\text{proj}}, \quad W_{\text{proj}} \in \mathbb{R}^{d_{\text{vis}} \times d_{\text{text}}}$$
 
@@ -87,30 +92,80 @@ Tokens with cumulative probability exceeding threshold $p$ are masked to $-\inft
 
 ---
 
-## Verification & Test Suite
+## Setup & Execution Instructions
 
-The repository contains an automated verification suite validating tensor shape contracts, cross-modal dimension alignment, and end-to-end backpropagation gradients across all sub-networks.
+### Prerequisites
+* Python 3.8+
+* PyTorch 2.0+
+* Pillow (`pip install torch torchvision pillow`)
 
-### Running All Tests
+### Running the Complete Suite
 
-Execute the automated test runner in PowerShell:
+Clone and run in PowerShell:
 
 ```powershell
 Set-Location "C:\Users\swaya\Desktop\TIMEPASS\claude\git\Multimodal-Vision-Language-Model-from-scratch"
 .\run_tests.ps1
 ```
 
-Or run the modules independently:
+Or execute independently via Python:
 
-```powershell
-# 1. Architectural Shape Contracts & Gradient Flow
+```bash
+# 1. Run architectural shape contract and gradient flow verification tests
 python tests/test_multimodal_architecture.py
 
-# 2. End-to-End Pipeline & Autoregressive Inference
+# 2. Run end-to-end forward pass and autoregressive generation
 python test.py
 ```
 
-### Verified Test Outputs
+---
+
+## Concrete Inference Example
+
+Below is a minimal end-to-end inference script using the unified model:
+
+```python
+import torch
+from PIL import Image
+from modeling_slip import simplevisionconfig, simpletextconfig
+from multimodal_model import MultiModalModel
+from text_tokenizer import TextTokenizer
+from processing_paligemma import PaliGemmaProcessor
+
+# 1. Initialize tokenizer and processor
+tokenizer = TextTokenizer(vocab_file="vocab.json")
+processor = PaliGemmaProcessor()
+
+# 2. Load configurations and model
+vision_cfg = simplevisionconfig(image_size=224, patch_size=16, num_hidden_layers=6, hidden_size=768)
+text_cfg = simpletextconfig(vocab_size=len(tokenizer.vocab), max_position_embeddings=512, hidden_size=2048)
+model = MultiModalModel(vision_cfg, text_cfg)
+model.eval()
+
+# 3. Prepare image and multimodal prompt with <image> semantic anchor
+image = Image.new("RGB", (224, 224), color=(73, 109, 137))
+pixel_values = processor.process_image(image)  # Shape: (1, 3, 224, 224)
+prompt = "<image> What objects are visible in this scene?"
+input_ids, image_insert_idx = tokenizer.prepare_input(prompt)
+
+# 4. Generate response with Nucleus (Top-p) sampling
+with torch.no_grad():
+    output_tokens = model.generate(
+        input_ids=input_ids.unsqueeze(0),
+        pixel_values=pixel_values,
+        image_insert_idx=image_insert_idx,
+        max_new_tokens=20,
+        temperature=0.8,
+        top_p=0.9
+    )
+
+response = tokenizer.decode(output_tokens[0])
+print(f"Generated Response: {response}")
+```
+
+---
+
+## Automated Verification & Test Outputs
 
 ```
 >>> Running Multimodal Architecture Verification Suite <<<
@@ -124,6 +179,18 @@ Loaded vocabulary with 6748 tokens
 
 >>> ALL MULTIMODAL ARCHITECTURE TESTS PASSED <<<
 ```
+
+---
+
+## Honest Limitations & Engineering Scope
+
+| Dimension | Implemented Scope | Out of Current Scope / Future Enhancements |
+| :--- | :--- | :--- |
+| **Model Weights** | Clean architectural implementation from first principles | Multi-billion parameter pre-trained checkpoints (weights randomly initialized or loaded via adapters) |
+| **Tokenizer** | Custom word-level tokenizer with `<image>` anchor | Production Byte-Pair Encoding (BPE) / SentencePiece tokenizer |
+| **Attention Mechanism** | Standard PyTorch Scaled Dot-Product Attention | FlashAttention-2 custom CUDA kernels or PagedAttention |
+| **Multimodal Inputs** | Single RGB image ($224 \times 224$) per prompt | Multi-image interleaved dialogues or video sequence processing |
+| **Sequence Length** | Capped at 512 tokens ($197 \text{ vision} + 315 \text{ text}$) | Long-context RoPE scaling for multi-thousand token contexts |
 
 ---
 
